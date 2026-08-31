@@ -35,6 +35,10 @@
 #include <ext2fs/ext2_io.h>
 #include <et/com_err.h>
 
+#include <endian.h>
+#include <fstream>
+#include <linux/capability.h>
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
