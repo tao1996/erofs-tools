@@ -191,6 +191,26 @@ static std::string make_dest(const Config &cfg, const std::string &nodepath) {
 	return cfg.outDir + "/" + rel;
 }
 
+static std::string dirname_of(const std::string &p) {
+	size_t pos = p.rfind('/');
+	if (pos == std::string::npos)
+		return ".";
+	if (pos == 0)
+		return "/";
+	return p.substr(0, pos);
+}
+
+/* make sure the parent directory of dest exists (needed when extracting a
+ * single file/symlink/special node whose parents were not part of the walk) */
+static int ensure_parent(const std::string &dest) {
+	std::string parent = dirname_of(dest);
+	if (parent == "." || parent == "/")
+		return 0;
+	if (mkdirs_p(parent, 0700) != 0)
+		return -errno;
+	return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* directory traversal                                                 */
 /* ------------------------------------------------------------------ */
@@ -307,6 +327,9 @@ static void set_attributes(const Config &cfg, const Node &node, const std::strin
 /* ------------------------------------------------------------------ */
 
 static int create_hardlink(const Config &cfg, const std::string &src, const std::string &dest) {
+	int rc = ensure_parent(dest);
+	if (rc)
+		return rc;
 	if (link(src.c_str(), dest.c_str()) < 0) {
 		if (errno == EEXIST && cfg.overwrite) {
 			if (unlink(dest.c_str()) < 0)
@@ -323,6 +346,9 @@ static int create_hardlink(const Config &cfg, const std::string &src, const std:
 
 static int extract_regular(ext2_filsys fs, const Config &cfg, const Node &node, const std::string &dest) {
 	bool tryagain = true;
+	int rc = ensure_parent(dest);
+	if (rc)
+		return rc;
 again:
 	int fd = open(dest.c_str(), O_WRONLY | O_CREAT | O_NOFOLLOW | (cfg.overwrite ? O_TRUNC : O_EXCL), 0600);
 	if (fd < 0) {
@@ -359,6 +385,9 @@ again:
 }
 
 static int extract_symlink(ext2_filsys fs, const Config &cfg, const Node &node, const std::string &dest) {
+	int rc = ensure_parent(dest);
+	if (rc)
+		return rc;
 	__u64 size = EXT2_I_SIZE(&node.inode);
 	std::string target;
 
@@ -400,6 +429,9 @@ static int extract_symlink(ext2_filsys fs, const Config &cfg, const Node &node, 
 }
 
 static int extract_special(const Config &cfg, const Node &node, const std::string &dest) {
+	int rc = ensure_parent(dest);
+	if (rc)
+		return rc;
 	dev_t rdev = rdev_from_inode(node.inode);
 	if (mknod(dest.c_str(), node.inode.i_mode, rdev) < 0) {
 		if (errno == EEXIST && cfg.overwrite) {

@@ -1,26 +1,40 @@
-cmake_minimum_required(VERSION 3.16)
-project(extract_ext4 LANGUAGES CXX)
+set(TARGET extract.ext4)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(TARGET_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
-find_path(EXT2FS_INCLUDE_DIR ext2fs/ext2fs.h)
-find_path(COM_ERR_INCLUDE_DIR et/com_err.h)
-find_library(EXT2FS_LIBRARY ext2fs)
-find_library(COM_ERR_LIBRARY com_err)
+file(GLOB EXTRACT_EXT4_SRCS "*.cpp")
 
-if(NOT EXT2FS_INCLUDE_DIR OR NOT EXT2FS_LIBRARY)
-    message(FATAL_ERROR "e2fsprogs development files not found (libext2fs-dev)")
+# Prefer static archives so extract.ext4 links cleanly under the project-wide
+# "-static" flag used on non-Darwin platforms.
+set(_extract_ext4_saved_suffixes ${CMAKE_FIND_LIBRARY_SUFFIXES})
+set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+find_library(EXT2FS_STATIC_LIBRARY NAMES ext2fs)
+find_library(COM_ERR_STATIC_LIBRARY NAMES com_err)
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${_extract_ext4_saved_suffixes})
+
+find_path(EXT2FS_INCLUDE_DIR NAMES ext2fs/ext2fs.h)
+find_path(COM_ERR_INCLUDE_DIR NAMES et/com_err.h)
+
+if(NOT EXT2FS_STATIC_LIBRARY OR NOT COM_ERR_STATIC_LIBRARY
+   OR NOT EXT2FS_INCLUDE_DIR OR NOT COM_ERR_INCLUDE_DIR)
+    message(FATAL_ERROR "extract.ext4 requires e2fsprogs development files (libext2fs-dev, comerr-dev)")
 endif()
 
-add_executable(extract.ext4 main.cpp)
-target_include_directories(extract.ext4 PRIVATE
+add_executable(${TARGET} ${EXTRACT_EXT4_SRCS})
+
+target_include_directories(${TARGET} PRIVATE
     ${EXT2FS_INCLUDE_DIR}
     ${COM_ERR_INCLUDE_DIR}
 )
-target_link_libraries(extract.ext4 PRIVATE
-    ${EXT2FS_LIBRARY}
-    ${COM_ERR_LIBRARY}
+
+target_link_libraries(${TARGET} PRIVATE
+    ${EXT2FS_STATIC_LIBRARY}
+    ${COM_ERR_STATIC_LIBRARY}
     pthread
 )
-target_compile_options(extract.ext4 PRIVATE -O2 -Wall)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    add_custom_command(TARGET ${TARGET} POST_BUILD
+        COMMAND ${CMAKE_STRIP} -w "$<TARGET_FILE:${TARGET}>"
+    )
+endif ()
